@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'board.dart' as brd;
@@ -91,19 +92,53 @@ class _DraggableTileWidget extends StatelessWidget {
 }
 
 class _GameWidget extends StatefulWidget {
-  const _GameWidget();
+  final SharedPreferences? prefs;
+  const _GameWidget(this.prefs);
   @override
   State<_GameWidget> createState() => _GameWidgetState();
 }
 
 class _GameWidgetState extends State<_GameWidget> {
-  Board board;
-  Future<List<Board>>? solving;
-  Timer? solutionStepper;
-  bool editing = false;
-  _GameWidgetState() : board = brd.randomSolvable();
-
+  Board _board;
+  Board get board => _board;
   bool get won => board == brd.winningBoard;
+  set board(Board board) {
+    _board = board;
+    _persist();
+  }
+
+  bool _editing = false;
+  bool get editing => _editing;
+  set editing(bool editing) {
+    _editing = editing;
+    _persist();
+  }
+
+  // These two are deliberately not persisted
+  Future<List<Board>>? _solving;
+  Timer? _solutionStepper;
+
+  _GameWidgetState() : _board = brd.randomSolvable();
+
+  @override
+  initState() {
+    super.initState();
+    if (widget.prefs == null) return;
+    final SharedPreferences prefs = widget.prefs!;
+    _editing = prefs.getBool('editing') ?? false;
+    final boardHex = prefs.getString('board');
+    if (boardHex != null) _board = brd.fromHex(boardHex) ?? _board;
+    _persist();
+  }
+
+  _persist() {
+    if (widget.prefs == null) return;
+    final SharedPreferences prefs = widget.prefs!;
+    prefs.setBool('editing', editing).then((success) {
+      if (success) prefs.setString('board', brd.toHex(board));
+      // TODO (...) log failure or notify user
+    });
+  }
 
   _move(int toIdx) {
     setState(() {
@@ -112,7 +147,7 @@ class _GameWidgetState extends State<_GameWidget> {
   }
 
   _slide(int dx, int dy) {
-    if (solutionStepper != null || solving != null || editing) return;
+    if (_solutionStepper != null || _solving != null || editing) return;
     var (hx, hy) = brd.idxToPos(brd.getTile(brd.flip(board), 0));
     // It is more intuitive to slide in the opposite direction of hole movement.
     hx -= dx;
@@ -123,25 +158,25 @@ class _GameWidgetState extends State<_GameWidget> {
 
   _solve() {
     setState(() {
-      solving = compute((board) => brd.solve(board).toList(), board);
+      _solving = compute((board) => brd.solve(board).toList(), board);
     });
   }
 
   _stop() {
-    if (solutionStepper == null) return;
+    if (_solutionStepper == null) return;
     setState(() {
-      solutionStepper!.cancel();
-      solutionStepper = null;
+      _solutionStepper!.cancel();
+      _solutionStepper = null;
     });
   }
 
   _shuffle() {
     setState(() {
       board = brd.randomSolvable();
-      solving = null;
-      if (solutionStepper != null) {
-        solutionStepper!.cancel();
-        solutionStepper = null;
+      _solving = null;
+      if (_solutionStepper != null) {
+        _solutionStepper!.cancel();
+        _solutionStepper = null;
       }
     });
   }
@@ -203,7 +238,7 @@ class _GameWidgetState extends State<_GameWidget> {
               final neighbor = (x - hx).abs() + (y - hy).abs() == 1;
               return _TileWidget(
                 tile,
-                neighbor && solutionStepper == null
+                neighbor && _solutionStepper == null
                     ? () {
                         _move(idx);
                       }
@@ -239,7 +274,7 @@ class _GameWidgetState extends State<_GameWidget> {
                   TextButton(
                       onPressed: brd.isSolvable(board) ? _copy : null,
                       child: const Text("Copy")),
-                  solutionStepper == null
+                  _solutionStepper == null
                       ? FilledButton(
                           onPressed: won ? null : _solve,
                           child: const Text("Solve"))
@@ -292,21 +327,21 @@ class _GameWidgetState extends State<_GameWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (solving != null) {
+    if (_solving != null) {
       return FutureBuilder<List<Board>>(
-        future: solving,
+        future: _solving,
         builder: (context, snapshot) {
           assert(!snapshot.hasError);
           if (snapshot.hasData) {
-            solving = null;
+            _solving = null;
             final data = snapshot.data!;
             int i = 0;
-            solutionStepper = Timer.periodic(
+            _solutionStepper = Timer.periodic(
                 const Duration(seconds: 1),
                 (Timer t) => setState(() {
                       if (i == data.length) {
-                        solutionStepper!.cancel();
-                        solutionStepper = null;
+                        _solutionStepper!.cancel();
+                        _solutionStepper = null;
                         return;
                       }
                       board = data[i];
@@ -333,12 +368,20 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    const body = _GameWidget();
     return Scaffold(
         body: Container(
       padding:
           EdgeInsets.fromLTRB(0, MediaQuery.of(context).viewPadding.top, 0, 0),
-      child: body,
+      child: FutureBuilder<SharedPreferences>(
+        future: SharedPreferences.getInstance(),
+        builder: (context, snapshot) {
+          // Behave gracefully if we don't have persistent storage.
+          // TODO (...) log this or notify user about the issue
+          if (snapshot.hasError) return const _GameWidget(null);
+          if (snapshot.hasData) return _GameWidget(snapshot.data!);
+          return const Center(child: CircularProgressIndicator());
+        },
+      ),
     ));
   }
 }
