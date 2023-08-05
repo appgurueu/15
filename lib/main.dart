@@ -335,17 +335,17 @@ class _GameWidgetState extends State<_GameWidget> {
           if (snapshot.hasData) {
             _solving = null;
             final data = snapshot.data!;
+            assert(data.isNotEmpty);
             int i = 0;
             _solutionStepper = Timer.periodic(
                 const Duration(seconds: 1),
                 (Timer t) => setState(() {
-                      if (i == data.length) {
-                        _solutionStepper!.cancel();
-                        _solutionStepper = null;
-                        return;
-                      }
                       board = data[i];
                       i++;
+                      if (i >= data.length) {
+                        _solutionStepper!.cancel();
+                        _solutionStepper = null;
+                      }
                     }));
             return _build();
           }
