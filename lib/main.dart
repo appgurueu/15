@@ -35,25 +35,58 @@ class MyApp extends StatelessWidget {
 class _TileWidget extends StatelessWidget {
   final Tile tile;
   final Function()? onPressed;
-  final bool muted;
-  const _TileWidget(this.tile, this.onPressed, {this.muted = false});
+  final Color? disabledBackgroundColor;
+  final bool showBlank;
+  const _TileWidget(this.tile, this.onPressed,
+      {this.disabledBackgroundColor = const Color.fromARGB(255, 134, 198, 238),
+      this.showBlank = false});
   @override
   Widget build(BuildContext context) {
+    if (tile == 0 && !showBlank) return Container();
     return Container(
         padding: const EdgeInsets.all(2),
         child: FilledButton(
           key: ValueKey<int>(tile),
           onPressed: onPressed,
           style: FilledButton.styleFrom(
-              backgroundColor: Color.fromARGB(255, 67, 170, 230),
-              disabledBackgroundColor: muted
-                  ? const Color.fromARGB(255, 190, 217, 233)
-                  : const Color.fromARGB(255, 134, 198, 238)),
+              backgroundColor: const Color.fromARGB(255, 67, 170, 230),
+              disabledBackgroundColor: disabledBackgroundColor),
           child: Text(tile == 0 ? "" : tile.toString(),
               style: DefaultTextStyle.of(context)
                   .style
                   .apply(fontSizeFactor: 2.0)),
         ));
+  }
+}
+
+class _DraggableTileWidget extends StatelessWidget {
+  final Tile tile;
+  final int idx;
+  final Function(Tile) onAccept;
+  const _DraggableTileWidget(this.tile, this.idx, this.onAccept);
+  @override
+  Widget build(BuildContext context) {
+    final Widget child = _TileWidget(tile, null, showBlank: true);
+    return DragTarget<int>(
+      builder: (context, candidateData, rejectedData) => LayoutBuilder(
+          builder: (context, constraints) => Draggable<int>(
+                data: idx,
+                dragAnchorStrategy: pointerDragAnchorStrategy,
+                feedback: SizedBox(
+                    width: constraints.maxWidth,
+                    height: constraints.maxHeight,
+                    child: DefaultTextStyle.of(context).wrap(context, child)),
+                childWhenDragging: _TileWidget(
+                  tile,
+                  null,
+                  disabledBackgroundColor:
+                      const Color.fromARGB(255, 190, 217, 233),
+                  showBlank: true,
+                ),
+                child: child,
+              )),
+      onAccept: onAccept,
+    );
   }
 }
 
@@ -147,6 +180,12 @@ class _GameWidgetState extends State<_GameWidget> {
     });
   }
 
+  _swap(int i, j) {
+    setState(() {
+      board = brd.swapTiles(board, i, j);
+    });
+  }
+
   Widget _build() {
     final (hx, hy) = brd.idxToPos(brd.flip(board) & 0xF);
     final buttons = Iterable.generate(
@@ -155,27 +194,10 @@ class _GameWidgetState extends State<_GameWidget> {
               final idx = brd.posToIdx(x, y);
               Tile tile = brd.getTile(board, idx);
               if (editing) {
-                final Widget child = _TileWidget(tile, null);
-                return DragTarget<int>(
-                  builder: (context, candidateData, rejectedData) =>
-                      LayoutBuilder(
-                          builder: (context, constraints) => Draggable<int>(
-                                data: idx,
-                                dragAnchorStrategy: pointerDragAnchorStrategy,
-                                feedback: SizedBox(
-                                    width: constraints.maxWidth,
-                                    height: constraints.maxHeight,
-                                    child: DefaultTextStyle.of(context).wrap(
-                                        context, _TileWidget(tile, null))),
-                                childWhenDragging:
-                                    _TileWidget(tile, null, muted: true),
-                                child: child,
-                              )),
-                  onAccept: (int j) {
-                    setState(() {
-                      board = brd.swapTiles(board, idx, j);
-                    });
-                  },
+                return _DraggableTileWidget(
+                  tile,
+                  idx,
+                  (int j) => _swap(idx, j),
                 );
               }
               final neighbor = (x - hx).abs() + (y - hy).abs() == 1;
@@ -247,6 +269,7 @@ class _GameWidgetState extends State<_GameWidget> {
             return KeyEventResult.handled;
           },
           child: GestureDetector(
+              // TODO make sure that this fires only for the primary axis
               onHorizontalDragEnd: (DragEndDetails details) {
                 if (details.primaryVelocity == null) return;
                 _slide(details.primaryVelocity!.sign.toInt(), 0);
@@ -311,27 +334,11 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     const body = _GameWidget();
-    if (true) {
-      return Scaffold(
-          body: Container(
-        padding: EdgeInsets.fromLTRB(
-            0, MediaQuery.of(context).viewPadding.top, 0, 0),
-        child: body,
-      ));
-    }
-    switch (Theme.of(context).platform) {
-      case TargetPlatform.linux:
-      case TargetPlatform.windows:
-      case TargetPlatform.macOS:
-        return body; // no scaffolding if there likely already is a window bar
-      default:
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-            title: const Text("15"),
-          ),
-          body: body,
-        );
-    }
+    return Scaffold(
+        body: Container(
+      padding:
+          EdgeInsets.fromLTRB(0, MediaQuery.of(context).viewPadding.top, 0, 0),
+      child: body,
+    ));
   }
 }
