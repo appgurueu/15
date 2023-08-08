@@ -20,3 +20,9 @@ compile using `dart compile exe cli_solve.dart -o solve` (and then run using `./
 The output is a sequence of puzzle states, from the given problem to the winning board, as hex, with newlines inserted for better readability.
 
 The hex format is simply a hex string of the hex digits of the 16 tiles; the blank tile is assigned 0. The winning board is stored as `123456789abcdef0` using this format. Whitespace is not allowed.
+
+There also is a simple benchmark tool to test the solver on random boards. Invoke it as `dart run bench.dart [n trials]`. Defaults to 100 trials.
+
+---
+
+Written using [Flutter](https://flutter.dev) for the [40th round of code guessing](https://cg.esolangs.gay/40/).
