@@ -86,7 +86,9 @@ class _DraggableTileWidget extends StatelessWidget {
                 ),
                 child: child,
               )),
-      onAccept: onAccept,
+      onAcceptWithDetails: (dragTargetDetails) {
+        onAccept(dragTargetDetails.data); 
+      },
     );
   }
 }
